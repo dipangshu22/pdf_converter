@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Converter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 60px;
+    }
+
+    header { text-align: center; margin-bottom: 32px; }
+    header h1 {
+      font-size: 2.4rem; font-weight: 800;
+      background: linear-gradient(135deg, #6366f1, #a78bfa, #38bdf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    header p { margin-top: 8px; color: #94a3b8; font-size: 1rem; }
+
+    /* badges */
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 32px; }
+    .badge { padding: 4px 12px; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+    .badge-doc { background:#1e3a5f; color:#7dd3fc; border:1px solid #0ea5e9; }
+    .badge-img { background:#1a3a1a; color:#86efac; border:1px solid #22c55e; }
+    .badge-xls { background:#3a2a0a; color:#fcd34d; border:1px solid #f59e0b; }
+
+    .card {
+      background: #1e2130; border: 1px solid #2e3347; border-radius: 20px;
+      padding: 36px; width: 100%; max-width: 620px;
+      box-shadow: 0 25px 60px rgba(0,0,0,.4);
+    }
+
+    /* drop zone */
+    .drop-zone {
+      border: 2px dashed #3b4263; border-radius: 14px; padding: 40px 24px;
+      text-align: center; cursor: pointer; transition: all .2s; position: relative;
+    }
+    .drop-zone.drag-over { border-color: #6366f1; background: rgba(99,102,241,.07); }
+    .drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-icon { font-size: 2.8rem; margin-bottom: 10px; }
+    .drop-zone h3 { font-size: 1.05rem; font-weight: 600; color: #cbd5e1; }
+    .drop-zone p  { margin-top: 5px; font-size: .82rem; color: #64748b; }
+    .drop-zone .hint { margin-top: 8px; font-size: .78rem; color: #4b6a8a; }
+
+    /* file list */
+    #fileList { margin-top: 20px; display: flex; flex-direction: column; gap: 8px; }
+
+    .file-item {
+      display: flex; align-items: center; gap: 10px;
+      background: #161926; border: 1px solid #2a3148; border-radius: 10px;
+      padding: 10px 14px; font-size: .88rem;
+    }
+    .file-item .fi-icon { font-size: 1.3rem; flex-shrink: 0; }
+    .file-item .fi-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cbd5e1; }
+    .file-item .fi-size { color: #64748b; font-size: .78rem; white-space: nowrap; }
+    .fi-status { font-size: .85rem; white-space: nowrap; }
+    .fi-status.pending  { color: #64748b; }
+    .fi-status.working  { color: #38bdf8; }
+    .fi-status.done     { color: #4ade80; }
+    .fi-status.failed   { color: #f87171; }
+    .fi-remove {
+      background: none; border: none; cursor: pointer; color: #475569;
+      font-size: 1rem; padding: 2px 6px; border-radius: 6px;
+      transition: color .15s, background .15s; flex-shrink: 0;
+    }
+    .fi-remove:hover { color: #f87171; background: #2d1a1a; }
+
+    /* summary bar */
+    #summary {
+      margin-top: 12px; font-size: .82rem; color: #64748b;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #clearAll {
+      background: none; border: none; cursor: pointer; color: #475569;
+      font-size: .8rem; text-decoration: underline; padding: 0;
+    }
+    #clearAll:hover { color: #f87171; }
+
+    /* convert btn */
+    .btn-convert {
+      width: 100%; margin-top: 18px; padding: 14px; border: none; border-radius: 12px;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff; transition: opacity .2s, transform .1s; letter-spacing: .03em;
+    }
+    .btn-convert:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
+    .btn-convert:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* progress */
+    .progress-wrap { height: 5px; background: #2e3347; border-radius: 4px; margin-top: 14px; overflow: hidden; display: none; }
+    .progress-bar  { height: 100%; background: linear-gradient(90deg,#6366f1,#38bdf8); border-radius: 4px; transition: width .3s ease; }
+
+    /* status block */
+    #status { margin-top: 18px; }
+    .status-msg {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 13px 16px; border-radius: 10px; font-size: .9rem; line-height: 1.5;
+    }
+    .status-loading { background:#1e2d40; border:1px solid #0ea5e9; color:#7dd3fc; }
+    .status-success { background:#0d2d1a; border:1px solid #22c55e; color:#86efac; }
+    .status-error   { background:#2d0d10; border:1px solid #ef4444; color:#fca5a5; }
+    .status-partial { background:#2d200a; border:1px solid #f59e0b; color:#fcd34d; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width:18px; height:18px; border:3px solid #1e3a5f; border-top-color:#38bdf8; border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0; margin-top:1px; }
+
+    /* download area */
+    #downloads { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .dl-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 20px; border-radius: 10px;
+      font-size: .9rem; font-weight: 700; text-decoration: none; transition: opacity .2s;
+      width: fit-content;
+    }
+    .dl-btn-zip { background: linear-gradient(135deg, #0369a1, #0ea5e9); color:#fff; }
+    .dl-btn-pdf { background: linear-gradient(135deg, #059669, #10b981); color:#fff; }
+    .dl-btn:hover { opacity: .85; }
+
+    /* how it works */
+    .how { margin-top: 44px; max-width: 620px; width: 100%; }
+    .how h2 { font-size:1rem; font-weight:700; color:#64748b; margin-bottom:14px; text-align:center; text-transform:uppercase; letter-spacing:.07em; }
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .step { background:#1e2130; border:1px solid #2e3347; border-radius:14px; padding:18px 12px; text-align:center; }
+    .step-icon { font-size:1.7rem; margin-bottom:8px; }
+    .step h3 { font-size:.88rem; font-weight:700; color:#cbd5e1; margin-bottom:4px; }
+    .step p  { font-size:.76rem; color:#64748b; }
+
+    footer { margin-top:44px; color:#374151; font-size:.76rem; }
+
+    /* ── Tabs ── */
+    .tabs { display:flex; gap:6px; margin-bottom:24px; background:#161926; border-radius:14px; padding:5px; width:100%; max-width:620px; }
+    .tab-btn {
+      flex:1; padding:10px; border:none; border-radius:10px; cursor:pointer;
+      font-size:.9rem; font-weight:600; transition:all .2s; background:transparent; color:#64748b;
+    }
+    .tab-btn.active { background:#1e2130; color:#e2e8f0; box-shadow:0 2px 8px rgba(0,0,0,.3); }
+    .tab-btn:hover:not(.active) { color:#94a3b8; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+
+    /* ── Translation extras ── */
+    .lang-select-wrap { margin-top:18px; }
+    .lang-select-wrap label { display:block; font-size:.82rem; color:#94a3b8; margin-bottom:6px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+    .lang-select {
+      width:100%; padding:11px 14px; border-radius:10px; font-size:.9rem;
+      background:#161926; border:1px solid #2a3148; color:#e2e8f0; outline:none;
+      appearance:none; cursor:pointer;
+    }
+    .lang-select:focus { border-color:#6366f1; }
+    .btn-translate {
+      width:100%; margin-top:18px; padding:14px; border:none; border-radius:12px;
+      font-size:1rem; font-weight:700; cursor:pointer;
+      background:linear-gradient(135deg,#0369a1,#0ea5e9);
+      color:#fff; transition:opacity .2s, transform .1s; letter-spacing:.03em;
+    }
+    .btn-translate:hover:not(:disabled) { opacity:.9; transform:translateY(-1px); }
+    .btn-translate:disabled { opacity:.45; cursor:not-allowed; }
+    .translate-drop-zone {
+      border:2px dashed #3b4263; border-radius:14px; padding:40px 24px;
+      text-align:center; cursor:pointer; transition:all .2s; position:relative;
+    }
+    .translate-drop-zone.drag-over { border-color:#0ea5e9; background:rgba(14,165,233,.07); }
+    .translate-drop-zone input[type="file"] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+    #tSelectedFile { margin-top:14px; display:none; }
+    .selected-file-badge {
+      display:flex; align-items:center; gap:10px;
+      background:#161926; border:1px solid #2a3148; border-radius:10px; padding:10px 14px;
+    }
+    .selected-file-badge .sf-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#cbd5e1; font-size:.88rem; }
+    .selected-file-badge .sf-remove { background:none; border:none; cursor:pointer; color:#475569; font-size:1rem; padding:2px 6px; border-radius:6px; }
+    .selected-file-badge .sf-remove:hover { color:#f87171; background:#2d1a1a; }
+
+    /* ── Template picker ─────────────────────────────── */
+    .template-section { margin-top: 18px; }
+    .template-section label { display:block; font-size:.82rem; font-weight:600;
+      color:#475569; margin-bottom:10px; }
+    .template-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+    .tpl-card {
+      border: 2px solid #e2e8f0; border-radius:10px; overflow:hidden;
+      cursor:pointer; transition:border-color .18s, transform .15s;
+      position:relative;
+    }
+    .tpl-card:hover { border-color:#94a3b8; transform:translateY(-2px); }
+    .tpl-card.selected { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.18); }
+    .tpl-preview {
+      height:72px; display:flex; flex-direction:column;
+      justify-content:flex-start; overflow:hidden;
+    }
+    .tpl-header { height:16px; flex-shrink:0; }
+    .tpl-body { flex:1; padding:5px 6px; display:flex; flex-direction:column; gap:3px; }
+    .tpl-line { height:4px; border-radius:2px; }
+    .tpl-label {
+      font-size:.68rem; font-weight:600; text-align:center;
+      padding:5px 2px; color:#475569; background:#f8fafc;
+      border-top:1px solid #e2e8f0;
+    }
+    @media(max-width:520px){ .template-grid{ grid-template-columns:repeat(3,1fr); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ PDF Converter</h1>
+  <p>Convert multiple documents, images, and spreadsheets to PDF at once.</p>
+</header>
+
+<div class="badges">
+  {% for f in doc_formats %}<span class="badge badge-doc">{{ f }}</span>{% endfor %}
+  {% for f in image_formats %}<span class="badge badge-img">{{ f }}</span>{% endfor %}
+  {% for f in excel_formats %}<span class="badge badge-xls">{{ f }}</span>{% endfor %}
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('convert')">⚙️ Convert to PDF</button>
+  <button class="tab-btn" onclick="switchTab('translate')">🌐 Translate PDF</button>
+</div>
+
+<!-- ═══════════════ CONVERT TAB ═══════════════ -->
+<div id="tab-convert" class="tab-panel active">
+<div class="card">
+
+  <!-- Drop zone -->
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" multiple
+      accept=".docx,.doc,.png,.jpg,.jpeg,.bmp,.gif,.tiff,.tif,.webp,.xlsx,.xls,.xlsm" />
+    <div class="drop-icon">📂</div>
+    <h3>Drop files here or click to browse</h3>
+    <p>DOCX · Images · Excel</p>
+    <p class="hint">You can select multiple files at once</p>
+  </div>
+
+  <!-- File list -->
+  <div id="fileList"></div>
+
+  <!-- Summary bar (shown when files selected) -->
+  <div id="summary" style="display:none;">
+    <span id="summaryText"></span>
+    <button id="clearAll" onclick="clearAll()">Clear all</button>
+  </div>
+
+  <!-- Convert button -->
+  <button class="btn-convert" id="convertBtn" disabled onclick="startConversion()">
+    Convert to PDF
+  </button>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar" id="progressBar" style="width:0%"></div>
+  </div>
+
+  <!-- Status message -->
+  <div id="status"></div>
+
+  <!-- Download links -->
+  <div id="downloads"></div>
+
+</div><!-- /card -->
+</div><!-- /tab-convert -->
+
+<!-- ═══════════════ TRANSLATE TAB ═══════════════ -->
+<div id="tab-translate" class="tab-panel">
+<div class="card">
+
+  <!-- Drop zone (PDF only) -->
+  <div class="translate-drop-zone" id="tDropZone">
+    <input type="file" id="tFileInput" accept=".pdf,.docx,.doc" />
+    <div class="drop-icon">📄</div>
+    <h3>Drop a PDF or Word file here or click to browse</h3>
+    <p style="margin-top:5px;font-size:.82rem;color:#64748b;">Supports PDF, DOCX, DOC</p>
+  </div>
+
+  <!-- Selected file badge -->
+  <div id="tSelectedFile">
+    <div class="selected-file-badge">
+      <span style="font-size:1.3rem">📄</span>
+      <span class="sf-name" id="tFileName"></span>
+      <span style="color:#64748b;font-size:.78rem;" id="tFileSize"></span>
+      <button class="sf-remove" onclick="tClearFile()" title="Remove">✕</button>
+    </div>
+  </div>
+
+  <!-- Language selector -->
+  <div class="lang-select-wrap">
+    <label for="tLangSelect">Target Language</label>
+    <select class="lang-select" id="tLangSelect">
+      <option value="Spanish">🇪🇸 Spanish</option>
+      <option value="French">🇫🇷 French</option>
+      <option value="German">🇩🇪 German</option>
+      <option value="Portuguese">🇧🇷 Portuguese</option>
+      <option value="Italian">🇮🇹 Italian</option>
+      <option value="Dutch">🇳🇱 Dutch</option>
+      <option value="Russian">🇷🇺 Russian</option>
+      <option value="Polish">🇵🇱 Polish</option>
+      <option value="Ukrainian">🇺🇦 Ukrainian</option>
+      <option value="Arabic">🇸🇦 Arabic</option>
+      <option value="Hindi">🇮🇳 Hindi</option>
+      <option value="Bengali">🇧🇩 Bengali</option>
+      <option value="Turkish">🇹🇷 Turkish</option>
+      <option value="Vietnamese">🇻🇳 Vietnamese</option>
+      <option value="Thai">🇹🇭 Thai</option>
+      <option value="Indonesian">🇮🇩 Indonesian</option>
+      <option value="Malay">🇲🇾 Malay</option>
+      <option value="Chinese">🇨🇳 Chinese (Simplified)</option>
+      <option value="Chinese Traditional">🇹🇼 Chinese (Traditional)</option>
+      <option value="Japanese">🇯🇵 Japanese</option>
+      <option value="Korean">🇰🇷 Korean</option>
+      <option value="Swedish">🇸🇪 Swedish</option>
+      <option value="Norwegian">🇳🇴 Norwegian</option>
+      <option value="Danish">🇩🇰 Danish</option>
+      <option value="Finnish">🇫🇮 Finnish</option>
+      <option value="Greek">🇬🇷 Greek</option>
+      <option value="Czech">🇨🇿 Czech</option>
+      <option value="Romanian">🇷🇴 Romanian</option>
+      <option value="Hungarian">🇭🇺 Hungarian</option>
+      <option value="Hebrew">🇮🇱 Hebrew</option>
+      <option value="Persian">🇮🇷 Persian</option>
+      <option value="Swahili">🇰🇪 Swahili</option>
+      <option value="English">🇬🇧 English</option>
+    </select>
+  </div>
+
+
+  <!-- PDF Design Template picker (shown only for PDF input) -->
+  <div class="template-section" id="tTemplateSection" style="display:none">
+    <label>Output Design Template</label>
+    <div class="template-grid">
+
+      <!-- Classic -->
+      <div class="tpl-card selected" data-tpl="classic" onclick="selectTemplate(this)">
+        <div class="tpl-preview" style="background:#ffffff">
+          <div class="tpl-header" style="background:#ffffff"></div>
+          <div class="tpl-body">
+            <div class="tpl-line" style="background:#475569;width:85%"></div>
+            <div class="tpl-line" style="background:#94a3b8;width:100%"></div>
+            <div class="tpl-line" style="background:#94a3b8;width:70%"></div>
+            <div class="tpl-line" style="background:#cbd5e1;width:90%"></div>
+          </div>
+        </div>
+        <div class="tpl-label">Classic</div>
+      </div>
+
+      <!-- Corporate -->
+      <div class="tpl-card" data-tpl="corporate" onclick="selectTemplate(this)">
+        <div class="tpl-preview" style="background:#ffffff">
+          <div class="tpl-header" style="background:#1e3a5f"></div>
+          <div class="tpl-body">
+            <div class="tpl-line" style="background:#1e3a5f;width:85%"></div>
+            <div class="tpl-line" style="background:#64748b;width:100%"></div>
+            <div class="tpl-line" style="background:#94a3b8;width:75%"></div>
+            <div class="tpl-line" style="background:#cbd5e1;width:90%"></div>
+          </div>
+        </div>
+        <div class="tpl-label">Corporate</div>
+      </div>
+
+      <!-- Elegant -->
+      <div class="tpl-card" data-tpl="elegant" onclick="selectTemplate(this)">
+        <div class="tpl-preview" style="background:#fdf8f0">
+          <div class="tpl-header" style="background:#8b6914"></div>
+          <div class="tpl-body">
+            <div class="tpl-line" style="background:#8b6914;width:80%"></div>
+            <div class="tpl-line" style="background:#a07830;width:100%"></div>
+            <div class="tpl-line" style="background:#c8a96e;width:70%"></div>
+            <div class="tpl-line" style="background:#d4b896;width:88%"></div>
+          </div>
+        </div>
+        <div class="tpl-label">Elegant</div>
+      </div>
+
+      <!-- Modern -->
+      <div class="tpl-card" data-tpl="modern" onclick="selectTemplate(this)">
+        <div class="tpl-preview" style="background:#ffffff; position:relative">
+          <div style="position:absolute;left:0;top:0;bottom:0;width:5px;background:#0f766e"></div>
+          <div class="tpl-header" style="background:#0f766e;margin-left:5px"></div>
+          <div class="tpl-body" style="padding-left:11px">
+            <div class="tpl-line" style="background:#0f766e;width:80%"></div>
+            <div class="tpl-line" style="background:#0d9488;width:100%"></div>
+            <div class="tpl-line" style="background:#5eead4;width:72%"></div>
+            <div class="tpl-line" style="background:#99f6e4;width:88%"></div>
+          </div>
+        </div>
+        <div class="tpl-label">Modern</div>
+      </div>
+
+      <!-- Dark -->
+      <div class="tpl-card" data-tpl="dark" onclick="selectTemplate(this)">
+        <div class="tpl-preview" style="background:#1e293b">
+          <div class="tpl-header" style="background:#0f172a"></div>
+          <div class="tpl-body">
+            <div class="tpl-line" style="background:#38bdf8;width:80%"></div>
+            <div class="tpl-line" style="background:#94a3b8;width:100%"></div>
+            <div class="tpl-line" style="background:#64748b;width:74%"></div>
+            <div class="tpl-line" style="background:#475569;width:88%"></div>
+          </div>
+        </div>
+        <div class="tpl-label" style="background:#334155;color:#cbd5e1;border-color:#475569">Dark</div>
+      </div>
+
+    </div>
+  </div>
+  <!-- Translate button -->
+  <button class="btn-translate" id="tBtn" disabled onclick="startTranslation()">
+    🌐 Translate File
+  </button>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="tProgressWrap">
+    <div class="progress-bar" id="tProgressBar" style="width:0%"></div>
+  </div>
+
+  <!-- Status -->
+  <div id="tStatus"></div>
+
+  <!-- Download -->
+  <div id="tDownloads"></div>
+
+</div><!-- /card -->
+</div><!-- /tab-translate -->
+<div class="how">
+  <h2>How it works</h2>
+  <div class="steps">
+    <div class="step"><div class="step-icon">📂</div><h3>Select</h3><p>Pick one or many files — mix types freely</p></div>
+    <div class="step"><div class="step-icon">⚙️</div><h3>Convert</h3><p>All files converted to PDF on the server</p></div>
+    <div class="step"><div class="step-icon">⬇️</div><h3>Download</h3><p>All files merged into one single PDF</p></div>
+  </div>
+</div>
+
+<footer>Files deleted after 1 hour · Max 200 MB total per batch</footer>
+
+<script>
+  const dropZone    = document.getElementById('dropZone');
+  const fileInput   = document.getElementById('fileInput');
+  const fileListEl  = document.getElementById('fileList');
+  const summaryEl   = document.getElementById('summary');
+  const summaryText = document.getElementById('summaryText');
+  const convertBtn  = document.getElementById('convertBtn');
+  const statusEl    = document.getElementById('status');
+  const downloadsEl = document.getElementById('downloads');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar  = document.getElementById('progressBar');
+
+  // Extension → emoji
+  const EXT_ICON = {
+    docx:'📝', doc:'📝',
+    xlsx:'📊', xls:'📊', xlsm:'📊',
+    png:'🖼', jpg:'🖼', jpeg:'🖼', bmp:'🖼', gif:'🖼', tiff:'🖼', tif:'🖼', webp:'🖼',
+  };
+
+  let fileMap = new Map(); // id → File
+  let nextId = 0;
+
+  // ── File selection ─────────────────────────────────────────────────────────
+  fileInput.addEventListener('change', () => addFiles(Array.from(fileInput.files)));
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    addFiles(Array.from(e.dataTransfer.files));
+  });
+
+  function addFiles(files) {
+    files.forEach(file => {
+      // Deduplicate by name+size
+      const key = file.name + '_' + file.size;
+      for (const [, f] of fileMap) {
+        if (f.name + '_' + f.size === key) return;
+      }
+      const id = ++nextId;
+      fileMap.set(id, file);
+      renderFileItem(id, file);
+    });
+    updateSummary();
+    // reset input so same file can be re-added after removal
+    fileInput.value = '';
+  }
+
+  function renderFileItem(id, file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const icon = EXT_ICON[ext] || '📄';
+    const sizeStr = file.size < 1024 * 1024
+      ? (file.size / 1024).toFixed(1) + ' KB'
+      : (file.size / 1024 / 1024).toFixed(1) + ' MB';
+
+    const div = document.createElement('div');
+    div.className = 'file-item';
+    div.id = `fi-${id}`;
+    div.innerHTML = `
+      <span class="fi-icon">${icon}</span>
+      <span class="fi-name" title="${esc(file.name)}">${esc(file.name)}</span>
+      <span class="fi-size">${sizeStr}</span>
+      <span class="fi-status pending" id="fis-${id}">Pending</span>
+      <button class="fi-remove" onclick="removeFile(${id})" title="Remove">✕</button>
+    `;
+    fileListEl.appendChild(div);
+  }
+
+  function removeFile(id) {
+    fileMap.delete(id);
+    const el = document.getElementById(`fi-${id}`);
+    if (el) el.remove();
+    updateSummary();
+  }
+
+  function clearAll() {
+    fileMap.clear();
+    fileListEl.innerHTML = '';
+    summaryEl.style.display = 'none';
+    convertBtn.disabled = true;
+    statusEl.innerHTML = '';
+    downloadsEl.innerHTML = '';
+    progressWrap.style.display = 'none';
+    progressBar.style.width = '0%';
+  }
+
+  function updateSummary() {
+    const n = fileMap.size;
+    convertBtn.disabled = n === 0;
+    if (n === 0) { summaryEl.style.display = 'none'; return; }
+    summaryEl.style.display = 'flex';
+    summaryText.textContent = `${n} file${n > 1 ? 's' : ''} selected`;
+  }
+
+  // ── Conversion ─────────────────────────────────────────────────────────────
+  async function startConversion() {
+    if (fileMap.size === 0) return;
+
+    // Reset UI
+    statusEl.innerHTML = '';
+    downloadsEl.innerHTML = '';
+    convertBtn.disabled = true;
+    document.getElementById('clearAll').style.display = 'none';
+
+    // Mark all pending → working
+    for (const [id] of fileMap) setFileStatus(id, 'working', '⏳ Converting…');
+
+    progressWrap.style.display = 'block';
+    progressBar.style.width = '0%';
+    animateProgress();
+    setStatus('loading', `Converting ${fileMap.size} file${fileMap.size > 1 ? 's' : ''}…`);
+
+    const formData = new FormData();
+    for (const [, file] of fileMap) formData.append('files[]', file);
+
+    try {
+      const res = await fetch('/convert', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      progressBar.style.width = '100%';
+      await delay(300);
+      progressWrap.style.display = 'none';
+
+      // Update per-file statuses
+      if (data.results) {
+        const nameToId = new Map();
+        for (const [id, file] of fileMap) nameToId.set(file.name, id);
+
+        data.results.forEach(r => {
+          const id = nameToId.get(r.filename);
+          if (id == null) return;
+          if (r.success) {
+            setFileStatus(id, 'done', '✔ Done');
+          } else {
+            setFileStatus(id, 'failed', '✖ Failed');
+          }
+        });
+      }
+
+      if (data.success) {
+        const isPartial = data.results && data.results.some(r => !r.success);
+        setStatus(isPartial ? 'partial' : 'success', `✔ ${data.message}`);
+        renderDownloads(data);
+      } else {
+        setStatus('error', `✖ ${data.error || 'Conversion failed'}`);
+        convertBtn.disabled = false;
+      }
+    } catch (err) {
+      progressWrap.style.display = 'none';
+      setStatus('error', `✖ Network error: ${err.message}`);
+      convertBtn.disabled = false;
+    }
+
+    document.getElementById('clearAll').style.display = '';
+  }
+
+  function renderDownloads(data) {
+    downloadsEl.innerHTML = '';
+    const a = document.createElement('a');
+    a.href = `/download/${encodeURIComponent(data.download_id)}`;
+    a.download = data.filename || 'merged.pdf';
+    a.className = 'dl-btn dl-btn-pdf';
+    a.innerHTML = `⬇ Download merged.pdf`;
+    downloadsEl.appendChild(a);
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function setFileStatus(id, cls, text) {
+    const el = document.getElementById(`fis-${id}`);
+    if (!el) return;
+    el.className = `fi-status ${cls}`;
+    el.textContent = text;
+  }
+
+  function setStatus(type, msg) {
+    const cls = {loading:'status-loading', success:'status-success', error:'status-error', partial:'status-partial'}[type];
+    const icon = type === 'loading' ? '<div class="spinner"></div>' : '';
+    statusEl.innerHTML = `<div class="status-msg ${cls}">${icon}<span>${msg}</span></div>`;
+  }
+
+  function animateProgress() {
+    let w = 0;
+    const iv = setInterval(() => {
+      w = Math.min(w + Math.random() * 6, 88);
+      progressBar.style.width = w + '%';
+      if (w >= 88) clearInterval(iv);
+    }, 180);
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+
+  // ── Tab switching ───────────────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      if (b.textContent.toLowerCase().includes(name === 'convert' ? 'convert' : 'translate'))
+        b.classList.add('active');
+    });
+  }
+
+  // ── Translation UI ──────────────────────────────────────────────────────
+  const tDropZone  = document.getElementById('tDropZone');
+  const tFileInput = document.getElementById('tFileInput');
+  const tBtn       = document.getElementById('tBtn');
+  const tStatus    = document.getElementById('tStatus');
+  const tDownloads = document.getElementById('tDownloads');
+  const tProgressWrap = document.getElementById('tProgressWrap');
+  const tProgressBar  = document.getElementById('tProgressBar');
+
+  let tFile = null;
+
+  tFileInput.addEventListener('change', () => {
+    if (tFileInput.files[0]) tSetFile(tFileInput.files[0]);
+  });
+  tDropZone.addEventListener('dragover', e => { e.preventDefault(); tDropZone.classList.add('drag-over'); });
+  tDropZone.addEventListener('dragleave', () => tDropZone.classList.remove('drag-over'));
+  tDropZone.addEventListener('drop', e => {
+    e.preventDefault(); tDropZone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    const allowed = ['.pdf', '.docx', '.doc'];
+    const fext = f ? f.name.toLowerCase().slice(f.name.lastIndexOf('.')) : '';
+    if (f && allowed.includes(fext)) tSetFile(f);
+    else tSetTStatus('error', '✖ Please drop a PDF, DOCX, or DOC file.');
+  });
+
+  function tSetFile(f) {
+    tFile = f;
+    document.getElementById('tFileName').textContent = f.name;
+    updateTemplatePicker(f.name);
+    document.getElementById('tFileSize').textContent =
+      f.size < 1048576 ? (f.size / 1024).toFixed(1) + ' KB' : (f.size / 1048576).toFixed(1) + ' MB';
+    document.getElementById('tSelectedFile').style.display = 'block';
+    tBtn.disabled = false;
+    tStatus.innerHTML = '';
+    tDownloads.innerHTML = '';
+    tFileInput.value = '';
+  }
+
+  function tClearFile() {
+    tFile = null;
+    document.getElementById('tSelectedFile').style.display = 'none';
+    document.getElementById('tTemplateSection').style.display = 'none';
+    tBtn.disabled = true;
+    tStatus.innerHTML = '';
+    tDownloads.innerHTML = '';
+    tProgressWrap.style.display = 'none';
+  }
+
+  async function startTranslation() {
+    if (!tFile) return;
+    const lang = document.getElementById('tLangSelect').value;
+
+    tBtn.disabled = true;
+    tStatus.innerHTML = '';
+    tDownloads.innerHTML = '';
+    tProgressWrap.style.display = 'block';
+    tProgressBar.style.width = '0%';
+    tAnimateProgress();
+    tSetTStatus('loading', `Translating to ${lang} via Google Translate…`);
+
+    const fd = new FormData();
+    fd.append('file', tFile);
+    fd.append('language', lang);
+    fd.append('design_template', selectedTemplate);
+
+    try {
+      const res  = await fetch('/translate', { method: 'POST', body: fd });
+      const data = await res.json();
+
+      tProgressBar.style.width = '100%';
+      await delay(300);
+      tProgressWrap.style.display = 'none';
+
+      if (data.success) {
+        tSetTStatus('success', `✔ ${data.message}`);
+        const a = document.createElement('a');
+        a.href = `/download/${encodeURIComponent(data.download_id)}`;
+        a.download = data.filename || 'translated.pdf';
+        a.className = 'dl-btn dl-btn-pdf';
+        a.innerHTML = `⬇ Download ${esc(data.filename || 'translated.pdf')}`;
+        tDownloads.innerHTML = '';
+        tDownloads.appendChild(a);
+        tBtn.disabled = false;
+      } else {
+        tSetTStatus('error', `✖ ${data.error || 'Translation failed'}`);
+        tBtn.disabled = false;
+      }
+    } catch (err) {
+      tProgressWrap.style.display = 'none';
+      tSetTStatus('error', `✖ Network error: ${err.message}`);
+      tBtn.disabled = false;
+    }
+  }
+
+  function tSetTStatus(type, msg) {
+    const cls = {loading:'status-loading', success:'status-success', error:'status-error'}[type];
+    const icon = type === 'loading' ? '<div class="spinner"></div>' : '';
+    tStatus.innerHTML = `<div class="status-msg ${cls}" style="margin-top:18px">${icon}<span>${msg}</span></div>`;
+  }
+
+  function tAnimateProgress() {
+    let w = 0;
+    const iv = setInterval(() => {
+      w = Math.min(w + Math.random() * 4, 88);
+      tProgressBar.style.width = w + '%';
+      if (w >= 88) clearInterval(iv);
+    }, 250);
+  }
+
+  function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+
+  // Template picker
+  let selectedTemplate = 'classic';
+  function selectTemplate(card) {
+    document.querySelectorAll('.tpl-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedTemplate = card.dataset.tpl;
+  }
+
+  // Show template picker only for PDF uploads
+  function updateTemplatePicker(filename) {
+    const section = document.getElementById('tTemplateSection');
+    section.style.display = filename && filename.toLowerCase().endsWith('.pdf') ? 'block' : 'none';
+  }
+
+</script>
+</body>
+</html>
